@@ -1,0 +1,1 @@
+-fno-optimize-sibling-calls -fno-inline -fno-inline-functions -m32
