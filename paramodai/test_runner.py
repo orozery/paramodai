@@ -18,12 +18,15 @@ def run_test(test_func, argv):
     AbstractState.MAX_CLAUSE_RANK = max_rank
 
     t = time.time()
+    res = True
     try:
         test_func()
     except Exception as e:
         print "\n\nTest failed"
         print "Reason:", e
+        res = False
     else:
         print "\n\nTest succeeded!"
 
     print "Running time:", time.time() - t
+    return res

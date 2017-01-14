@@ -15,12 +15,18 @@ def random_selector_transformer(state, bb):
 def test_resource_manager():
     a = ForwardAnalyzer("resource_manager")
     a.set_func_transformer("random_selector", random_selector_transformer)
+
+    # start from trivial arithmetic facts (0 != 1, 0 != 2, 1 != 2)
     a.assign(Term.get(0), Term.get(1), True)
     a.assign(Term.get(0), Term.get(2), True)
     a.assign(Term.get(1), Term.get(2), True)
+
     a.run_from_func("resource_manager")
-    ret_state = a[a.cfg[RETURN_ADDR]]
+    ret_state = a.get_state(RETURN_ADDR)
     solver = ret_state.get_solver()
+
+    # verify that is_camera_on=1 -> is_mic_on=1
+    # is_camera_on is stk_-18, is_mic_on is stk_-14
     solver.add(Term.get("stk_-14").z3_expr != Term.get(0).z3_expr)
     solver.add(Term.get("stk_-18").z3_expr != Term.get(1).z3_expr)
     if solver.check() != unsat:

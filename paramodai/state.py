@@ -18,14 +18,15 @@ from paramodai.literal import Literal
 from paramodai.term import Term, TRUE, VAR
 from paramodai.conseq_find import ConsequenceFinder
 from z3 import unsat, Solver, And, Not, sat, FreshBool, Implies
-from itertools import product
+from itertools import product, combinations, permutations
 
 
 class AbstractState(object):
 
     _counter = 0
-    MAX_CLAUSE_SIZE = 3
-    MAX_CLAUSE_RANK = 10
+    MAX_CLAUSE_SIZE = 2
+    MAX_CLAUSE_RANK = 2
+    CONNECTION_ANALYSIS = False
 
     __slots__ = "clauses", "_instr"
 
@@ -111,6 +112,9 @@ class AbstractState(object):
                                                 sign)}))
 
     def handle_assertions(self, assertions):
+        if self.CONNECTION_ANALYSIS:
+            return True
+
         for cond, term1, term2 in assertions:
             if cond == "eq":
                 self.add_eq(term1, term2)
@@ -187,7 +191,109 @@ class AbstractState(object):
             subterms.append(subterm)
         return Term.get(term.name, *subterms), tmps
 
+    def _connection_analysis_assignment(self, dst, src):
+        if dst.is_deref:
+
+            # self.add_consequences()
+            # to_remove = []
+            # for c in self.clauses.copy():
+            #     for l in c:
+            #         if not l.sign:
+            #             to_remove.append(c)
+            #             break
+            # self.remove_clauses(to_remove)
+
+            # begin transformer v->f := 0
+            self.add_eq(dst.addr, Term.get(0), True)
+
+            var_names = self.atomic_names - {0}
+            terms = {}
+            old_terms = {}
+            for name in var_names:
+                terms[name] = Term.get(name)
+                old_name = "OLD_" + name
+                old_terms[name] = Term.get(old_name)
+                self.rename(name, old_name)
+            terms[0] = Term.get(0)
+            old_terms[0] = Term.get(0)
+            v = dst.addr.name
+
+            for u, w in combinations(var_names | {0}, 2):
+                self.add_clause(Clause.get({
+                    Literal.get(Atom.get(terms[u], terms[w]), True),
+                    Literal.get(Atom.get(old_terms[u], old_terms[w]))
+                }))
+
+            for u, w in permutations(var_names, 2):
+                self.add_clause(Clause.get({
+                    Literal.get(Atom.get(old_terms[u], old_terms[w]), True),
+                    Literal.get(Atom.get(old_terms[u], old_terms[v])),
+                    Literal.get(Atom.get(terms[u], terms[w]))
+                }))
+
+            for u in var_names - {v}:
+                self.add_clause(Clause.get({
+                    Literal.get(Atom.get(terms[u], Term.get(0))),
+                    Literal.get(Atom.get(old_terms[u], Term.get(0)), True)
+                }))
+
+            for u, w in permutations(var_names, 2):
+                self.add_clause(Clause.get({
+                    Literal.get(Atom.get(old_terms[u], old_terms[w]), True),
+                    Literal.get(Atom.get(old_terms[u], old_terms[v]), True),
+                    Literal.get(Atom.get(terms[u], terms[v])),
+                    Literal.get(Atom.get(terms[w], terms[v])),
+                    Literal.get(Atom.get(terms[u], terms[w]))
+                }))
+
+            for name in sorted(var_names, key=lambda x: repr(x)):
+                self.kill_name("OLD_" + name)
+
+            # end transformer v->f := 0
+
+            state = self.copy()
+            state.add_eq(src, Term.get(0), True)
+            self.add_eq(src, Term.get(0))
+
+            for name in var_names:
+                state.rename(name, "OLD_" + name)
+
+            for u, w in combinations(var_names | {0}, 2):
+                state.add_clause(Clause.get({
+                    Literal.get(Atom.get(terms[u], terms[w])),
+                    Literal.get(Atom.get(old_terms[u], old_terms[w]), True)
+                }))
+
+            for u, w in permutations(var_names | {0}, 2):
+                state.add_clause(Clause.get({
+                    Literal.get(Atom.get(old_terms[u], old_terms[w])),
+                    Literal.get(Atom.get(old_terms[u], old_terms[v])),
+                    Literal.get(Atom.get(old_terms[u], old_terms[src.name])),
+                    Literal.get(Atom.get(terms[u], terms[w]), True)
+                }))
+
+            for name in sorted(var_names, key=lambda x: repr(x)):
+                state.kill_name("OLD_" + name)
+
+            state.add_eq(dst.addr, src)
+
+            self.clauses = AbstractState.merge_two_states(
+                self, state).clauses
+        else:
+            self.kill(dst)
+            if src.is_atomic:
+                self.add_eq(src, dst)
+            elif src.is_deref:
+                self.add_clause(Clause.get({
+                    Literal.get(Atom.get(src.addr, dst)),
+                    Literal.get(Atom.get(dst, Term.get(0)))
+                }))
+                self.add_eq(src.addr, Term.get(0), True)
+
     def _handle_simple_assignment(self, dst, src):
+        if self.CONNECTION_ANALYSIS:
+            return self._connection_analysis_assignment(dst, src)
+
         # if dst.is_deref:
         #     dst = self.simplify_term(dst)
         # src = self.simplify_term(src)

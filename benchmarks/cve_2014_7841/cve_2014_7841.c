@@ -37,10 +37,12 @@ extern void cve_2014_7841(int param_type) {
         } else if (family == AF_INET6) {
             af = &sctp_af_v6_specific;
         } else {
+            // dead code
             af = NULL;
         }
         // end inline
-        
+
+        // this memory read is safe since the af=NULL above is a dead code
         read = *af;
             
     } else if (param_type == SCTP_PARAM_SET_PRIMARY) {
@@ -63,6 +65,7 @@ extern void cve_2014_7841(int param_type) {
         // end inline
             
         if (af != NULL) {
+            // clearly safe -> this is the fix of this CVE
             read = *af;
         }
     }

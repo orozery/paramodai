@@ -9,7 +9,7 @@ import sys
 def test_find_last():
     a = ForwardAnalyzer("find_last")
     a.run_from_func("find_last")
-    ret_state = a[a.cfg[RETURN_ADDR]]
+    ret_state = a.get_state(RETURN_ADDR)
     solver = ret_state.get_solver()
     solver.add(Term.get("EAX").z3_expr != Term.get(0).z3_expr)
     solver.add(Term.get("EAX").deref().z3_expr != Term.get("stk_8").z3_expr)
